@@ -1,17 +1,18 @@
 {% load static %}
+{% load bootstrap4 %}
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="WebVirtMgr panel for manage virtual machine">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="WebVirtCloud panel for manage virtual machine">
     <meta name="author" content="anatoliy.guskov@gmail.com">
 
     <title>{% block title %}{% endblock %}</title>
 
     <!-- Bootstrap Core CSS -->
-    <link href="{% static "css/bootstrap.min.css" %}" rel="stylesheet">
+    <link href="{% static "css/wvc-main.min.css" %}" rel="stylesheet" id="wvc_css">
 
     <!-- WebVirtCloud CSS -->
     <link href="{% static "css/webvirtcloud.css" %}" rel="stylesheet">
@@ -35,12 +36,22 @@
 
     {% include 'navbar.html' %}
 
-    <div class="container">
-
-    {% block content %}{% endblock %}
-
-    </div> <!-- /container -->
-
+    <div role="main" class="container">
+      <div class"row">
+        <div class="col-sm-12">
+          <div class="float-right">
+            {% block page_header_extra %}
+            {% endblock page_header_extra %}
+          </div>
+          <h3 class="page-header">
+            {% block page_header %}
+            {% endblock page_header %}
+          </h3>
+        </div>
+      </div>
+      {% bootstrap_messages %}
+      {% block content %}{% endblock %}
+    </div>
 
     <!-- Bootstrap core JavaScript
     ================================================== -->
@@ -48,7 +59,7 @@
     <!-- jQuery -->
     <script src="{% static "js/jquery.js" %}"></script>
     <!-- Bootstrap Core JavaScript -->
-    <script src="{% static "js/bootstrap.min.js" %}"></script>
+    <script src="{% static "js/bootstrap.bundle.min.js" %}"></script>
     <!-- JavaScript Cookie -->
     <script src="{% static "js/js.cookie.js" %}"></script>
     {% block script %}{% endblock %}

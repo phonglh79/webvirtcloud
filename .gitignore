@@ -1,8 +1,10 @@
 .vagrant
 venv
+venv2
 .vscode
 .idea
 .DS_*
+.webvirtcloud
 *.pyc
 db.sqlite3*
 console/cert.pem*
@@ -10,3 +12,5 @@ tags
 dhcpd.*
 webvirtcloud/settings.py
 *migrations/*
+.coverage
+htmlcov

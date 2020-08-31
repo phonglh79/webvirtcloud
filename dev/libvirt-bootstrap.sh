@@ -396,7 +396,8 @@ install_centos_post() {
         exit 1
     fi
     if [ -f /etc/libvirt/qemu.conf ]; then
-        sed -i 's/#vnc_listen/vnc_listen/g' /etc/libvirt/qemu.conf
+        sed -i 's/#[ ]*vnc_listen.*/vnc_listen = "0.0.0.0"/g' /etc/libvirt/qemu.conf
+        sed -i 's/#[ ]*spice_listen.*/spice_listen = "0.0.0.0"/g' /etc/libvirt/qemu.conf
     else
         echoerror "/etc/libvirt/qemu.conf not found. Exiting..."
         exit 1
@@ -456,7 +457,7 @@ daemons_running_centos() {
         systemctl start supervisord.service
     fi
     return 0
-} 
+}
 #
 #   Ended CentOS Install Functions
 #
@@ -467,7 +468,7 @@ daemons_running_centos() {
 #   Fedora Install Functions
 #
 install_fedora() {
-    yum -y install kvm libvirt bridge-utils python-libguestfs supervisor || return 1
+    yum -y install kvm libvirt bridge-utils python3-libguestfs supervisor || return 1
     return 0
 }
 
@@ -487,7 +488,8 @@ install_fedora_post() {
         exit 1
     fi
     if [ -f /etc/libvirt/qemu.conf ]; then
-        sed -i 's/#vnc_listen/vnc_listen/g' /etc/libvirt/qemu.conf
+        sed -i 's/#[ ]*vnc_listen.*/vnc_listen = "0.0.0.0"/g' /etc/libvirt/qemu.conf
+        sed -i 's/#[ ]*spice_listen.*/spice_listen = "0.0.0.0"/g' /etc/libvirt/qemu.conf
     else
         echoerror "/etc/libvirt/qemu.conf not found. Exiting..."
         exit 1
@@ -517,7 +519,7 @@ daemons_running_fedora() {
         systemctl start supervisord.service
     fi
     return 0
-} 
+}
 #
 #   Ended Fedora Install Functions
 #
@@ -528,7 +530,7 @@ daemons_running_fedora() {
 #   Opensuse Install Functions
 #
 install_opensuse() {
-    zypper -n install -l kvm libvirt bridge-utils python-libguestfs supervisor || return 1
+    zypper -n install -l kvm libvirt bridge-utils python3-libguestfs supervisor || return 1
     return 0
 }
 
@@ -548,7 +550,8 @@ install_opensuse_post() {
         exit 1
     fi
     if [ -f /etc/libvirt/qemu.conf ]; then
-        sed -i 's/#vnc_listen/vnc_listen/g' /etc/libvirt/qemu.conf
+        sed -i 's/#[ ]*vnc_listen.*/vnc_listen = "0.0.0.0"/g' /etc/libvirt/qemu.conf
+        sed -i 's/#[ ]*spice_listen.*/spice_listen = "0.0.0.0"/g' /etc/libvirt/qemu.conf
     else
         echoerror "/etc/libvirt/qemu.conf not found. Exiting..."
         exit 1
@@ -593,7 +596,7 @@ install_ubuntu() {
     if [ $DISTRO_MAJOR_VERSION -lt 18 ]; then
        apt-get -y install kvm libvirt-bin bridge-utils sasl2-bin python-guestfs supervisor || return 1
     else
-       apt install -y qemu-kvm libvirt-bin bridge-utils virt-manager sasl2-bin python-guestfs supervisor || return 1
+       apt install -y qemu-kvm libvirt-bin bridge-utils virt-manager sasl2-bin python3-guestfs supervisor || return 1
     fi
 
 
@@ -618,11 +621,9 @@ install_ubuntu_post() {
         exit 1
     fi
     if [ -f /etc/libvirt/qemu.conf ]; then
-        if ([ $DISTRO_MAJOR_VERSION -eq 12 ] && [ $DISTRO_MINOR_VERSION -eq 04 ]); then
-            sed -i 's/# vnc_listen/vnc_listen/g' /etc/libvirt/qemu.conf
-        else
-            sed -i 's/#vnc_listen/vnc_listen/g' /etc/libvirt/qemu.conf
-        fi
+        sed -i 's/#[ ]*vnc_listen.*/vnc_listen = "0.0.0.0"/g' /etc/libvirt/qemu.conf
+        sed -i 's/#[ ]*spice_listen.*/spice_listen = "0.0.0.0"/g' /etc/libvirt/qemu.conf
+
     else
         echoerror "/etc/libvirt/qemu.conf not found. Exiting..."
         exit 1
@@ -650,7 +651,7 @@ daemons_running_ubuntu() {
         service supervisor start
     fi
     return 0
-} 
+}
 #
 #   Ended Ubuntu Install Functions
 #
@@ -662,7 +663,11 @@ daemons_running_ubuntu() {
 #
 install_debian() {
     apt-get update || return 1
-    apt-get -y install qemu-kvm libvirt-bin bridge-utils sasl2-bin python-guestfs supervisor || return 1
+    if [ $DISTRO_MAJOR_VERSION -lt 10 ]; then
+	    apt-get -y install qemu-kvm libvirt-bin bridge-utils sasl2-bin python-guestfs supervisor || return 1
+    else
+	    apt-get -y install qemu qemu-kvm qemu-system qemu-utils libvirt-clients libvirt-daemon-system sasl2-bin virtinst supervisor || return 1
+    fi
     return 0
 }
 
@@ -693,9 +698,17 @@ install_debian_post() {
         exit 1
     fi
     if [ -f /etc/libvirt/qemu.conf ]; then
-        sed -i 's/# vnc_listen/vnc_listen/g' /etc/libvirt/qemu.conf
+        sed -i 's/#[ ]*vnc_listen.*/vnc_listen = "0.0.0.0"/g' /etc/libvirt/qemu.conf
+        sed -i 's/#[ ]*spice_listen.*/spice_listen = "0.0.0.0"/g' /etc/libvirt/qemu.conf
     else
         echoerror "/etc/libvirt/qemu.conf not found. Exiting..."
+        exit 1
+    fi
+    if [ -f /etc/sasl2/libvirt.conf ]; then
+        sed -i 's/: gssapi/: digest-md5/g' /etc/sasl2/libvirt.conf
+        sed -i 's/#sasldb_path/sasldb_path/g' /etc/sasl2/libvirt.conf
+    else
+        echoerror "/etc/sasl2/libvirt.conf not found. Exiting..."
         exit 1
     fi
     if [ -f /etc/supervisor/supervisord.conf ]; then
@@ -724,7 +737,7 @@ daemons_running_debian() {
         service supervisor start
     fi
     return 0
-} 
+}
 #
 #   Ended Debian Install Functions
 #

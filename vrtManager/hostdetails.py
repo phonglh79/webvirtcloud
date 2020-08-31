@@ -18,11 +18,11 @@ class wvmHostDetails(wvmConnect):
         """
         all_mem = self.wvm.getInfo()[1] * 1048576
         freemem = self.wvm.getMemoryStats(-1, 0)
-        if type(freemem) == dict:
-            free = (freemem.values()[0] +
-                    freemem.values()[2] +
-                    freemem.values()[3]) * 1024
-            percent = (100 - ((free * 100) / all_mem))
+        if isinstance(freemem, dict):
+            free = (freemem['buffers'] +
+                    freemem['free'] +
+                    freemem['cached']) * 1024
+            percent = abs(100 - ((free * 100) // all_mem))
             usage = (all_mem - free)
             mem_usage = {'total': all_mem, 'usage': usage, 'percent': percent}
         else:
@@ -36,9 +36,9 @@ class wvmHostDetails(wvmConnect):
         prev_idle = 0
         prev_total = 0
         cpu = self.wvm.getCPUStats(-1, 0)
-        if type(cpu) == dict:
+        if isinstance(cpu, dict):
             for num in range(2):
-                idle = self.wvm.getCPUStats(-1, 0).values()[1]
+                idle = self.wvm.getCPUStats(-1, 0)['idle']
                 total = sum(self.wvm.getCPUStats(-1, 0).values())
                 diff_idle = idle - prev_idle
                 diff_total = total - prev_total
@@ -58,15 +58,11 @@ class wvmHostDetails(wvmConnect):
         """
         Function return host server information: hostname, cpu, memory, ...
         """
-        info = []
-        info.append(self.wvm.getHostname()) # hostname
-        info.append(self.wvm.getInfo()[0]) # architecture
-        info.append(self.wvm.getInfo()[1] * 1048576) # memory
-        info.append(self.wvm.getInfo()[2]) # cpu core count
-        info.append(get_xml_path(self.wvm.getSysinfo(0), func=cpu_version)) # cpu version
-        info.append(self.wvm.getURI()) #uri
+        info = list()
+        info.append(self.wvm.getHostname())  # hostname
+        info.append(self.wvm.getInfo()[0])  # architecture
+        info.append(self.wvm.getInfo()[1] * 1048576)  # memory
+        info.append(self.wvm.getInfo()[2])  # cpu core count
+        info.append(get_xml_path(self.wvm.getSysinfo(0), func=cpu_version))  # cpu version
+        info.append(self.wvm.getURI())  # uri
         return info
-
-
-
-

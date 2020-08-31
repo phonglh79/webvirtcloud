@@ -1,39 +1,31 @@
-# -*- coding: utf-8 -*-
-from __future__ import unicode_literals
-
-from django.shortcuts import render
 from django.http import HttpResponseRedirect
-from django.shortcuts import render, get_object_or_404
+from django.shortcuts import get_object_or_404, render
+from django.urls import reverse
 from django.utils.translation import ugettext_lazy as _
-from django.core.urlresolvers import reverse
-from django.contrib.auth.decorators import login_required
-from computes.models import Compute
-from vrtManager import util
-from vrtManager.nwfilters import wvmNWFilters, wvmNWFilter
-from vrtManager.instance import wvmInstances, wvmInstance
 from libvirt import libvirtError
+
+from admin.decorators import superuser_only
+from computes.models import Compute
 from logs.views import addlogmsg
+from vrtManager import util
+from vrtManager.instance import wvmInstance, wvmInstances
+from vrtManager.nwfilters import wvmNWFilter, wvmNWFilters
 
 
-@login_required
+@superuser_only
 def nwfilters(request, compute_id):
     """
     :param request:
+    :param compute_id:
     :return:
     """
-
-    if not request.user.is_superuser:
-        return HttpResponseRedirect(reverse('index'))
 
     error_messages = []
     nwfilters_all = []
     compute = get_object_or_404(Compute, pk=compute_id)
 
     try:
-        conn = wvmNWFilters(compute.hostname,
-                           compute.login,
-                           compute.password,
-                           compute.type)
+        conn = wvmNWFilters(compute.hostname, compute.login, compute.password, compute.type)
 
         if request.method == 'POST':
             if 'create_nwfilter' in request.POST:
@@ -51,7 +43,7 @@ def nwfilters(request, compute_id):
                             error_msg = _("A network filter with this name already exists")
                             raise Exception(error_msg)
                         if uuid == nwf.UUIDString():
-                            error_msg = _("A network filter with this uuid already exists")
+                            error_msg = _("A network filter with this UUID already exists")
                             raise Exception(error_msg)
                     else:
                         try:
@@ -59,25 +51,24 @@ def nwfilters(request, compute_id):
                             conn.create_nwfilter(xml)
                             addlogmsg(request.user.username, compute.hostname, msg)
                         except libvirtError as lib_err:
-                            error_messages.append(lib_err.message)
-                            addlogmsg(request.user.username, compute.hostname, lib_err.message)
+                            error_messages.append(lib_err)
+                            addlogmsg(request.user.username, compute.hostname, lib_err)
 
             if 'del_nwfilter' in request.POST:
-                name = request.POST.get('nwfiltername','')
-                msg = _("Deleting NWFilter: %s" % name)
+                name = request.POST.get('nwfiltername', '')
+                msg = _(f"Deleting NWFilter: {name}")
                 in_use = False
                 nwfilter = conn.get_nwfilter(name)
 
                 is_conn = wvmInstances(compute.hostname, compute.login, compute.password, compute.type)
                 instances = is_conn.get_instances()
                 for inst in instances:
-                #    if in_use: break
                     i_conn = wvmInstance(compute.hostname, compute.login, compute.password, compute.type, inst)
                     dom_filterrefs = i_conn.get_filterrefs()
 
                     if name in dom_filterrefs:
                         in_use = True
-                        msg = _("NWFilter is in use by %s. Cannot be deleted." % inst)
+                        msg = _(f"NWFilter is in use by {inst}. Cannot be deleted.")
                         error_messages.append(msg)
                         addlogmsg(request.user.username, compute.hostname, msg)
                         i_conn.close()
@@ -90,11 +81,11 @@ def nwfilters(request, compute_id):
 
             if 'cln_nwfilter' in request.POST:
 
-                name = request.POST.get('nwfiltername','')
+                name = request.POST.get('nwfiltername', '')
                 cln_name = request.POST.get('cln_name', name + '-clone')
 
-                conn.clone_nwfilter(name,cln_name)
-                msg = _("Cloning NWFilter %s as %s" % (name, cln_name))
+                conn.clone_nwfilter(name, cln_name)
+                msg = _(f"Cloning NWFilter {name} as {cln_name}")
                 addlogmsg(request.user.username, compute.hostname, msg)
 
         for nwf in conn.get_nwfilters():
@@ -108,28 +99,27 @@ def nwfilters(request, compute_id):
         error_messages.append(err)
         addlogmsg(request.user.username, compute.hostname, err)
 
-    return render(request, 'nwfilters.html', {'error_messages': error_messages,
-                                              'nwfilters': nwfilters_all,
-                                              'compute': compute})
+    return render(request, 'nwfilters.html', {
+        'error_messages': error_messages,
+        'nwfilters': nwfilters_all,
+        'compute': compute
+    })
 
 
-@login_required
 def nwfilter(request, compute_id, nwfltr):
-
+    """
+    :param request:
+    :param compute_id:
+    :param nwfltr:
+    :return:
+    """
     error_messages = []
     nwfilters_all = []
     compute = get_object_or_404(Compute, pk=compute_id)
 
     try:
-        nwfilter = wvmNWFilter(compute.hostname,
-                           compute.login,
-                           compute.password,
-                           compute.type,
-                           nwfltr)
-        conn = wvmNWFilters(compute.hostname,
-                                    compute.login,
-                                    compute.password,
-                                    compute.type)
+        nwfilter = wvmNWFilter(compute.hostname, compute.login, compute.password, compute.type, nwfltr)
+        conn = wvmNWFilters(compute.hostname, compute.login, compute.password, compute.type)
 
         for nwf in conn.get_nwfilters():
             nwfilters_all.append(conn.get_nwfilter_info(nwf))

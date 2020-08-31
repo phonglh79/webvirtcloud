@@ -1,8 +1,8 @@
 import random
-import lxml.etree as etree
-import libvirt
 import string
 import re
+import lxml.etree as etree
+import libvirt
 
 
 def is_kvm_available(xml):
@@ -26,7 +26,6 @@ def randomMAC():
 
 def randomUUID():
     """Generate a random UUID."""
-
     u = [random.randint(0, 255) for ignore in range(0, 16)]
     u[6] = (u[6] & 0x0F) | (4 << 4)
     u[8] = (u[8] & 0x3F) | (2 << 6)
@@ -34,9 +33,9 @@ def randomUUID():
                      "%02x" * 6]) % tuple(u)
 
 
-def randomPasswd(length=12, alphabet=string.letters + string.digits):
+def randomPasswd(length=12, alphabet=string.ascii_letters + string.digits):
     """Generate a random password"""
-    return ''.join([random.choice(alphabet) for i in xrange(length)])
+    return ''.join([random.choice(alphabet) for i in range(length)])
 
 
 def get_max_vcpus(conn, type=None):
@@ -75,7 +74,7 @@ def compareMAC(p, q):
         else:
             return -1
 
-    for i in xrange(len(pa)):
+    for i in range(len(pa)):
         n = int(pa[i], 0x10) - int(qa[i], 0x10)
         if n > 0:
             return 1
@@ -108,9 +107,9 @@ def get_xpath(doc, path):
 
     ret = doc.xpath(path)
     if ret is not None:
-        if type(ret) == list:
+        if isinstance(ret, list):
             if len(ret) >= 1:
-                if hasattr(ret[0],'text'):
+                if hasattr(ret[0], 'text'):
                     result = ret[0].text
                 else:
                     result = ret[0]
@@ -118,6 +117,7 @@ def get_xpath(doc, path):
             result = ret
 
     return result
+
 
 def pretty_mem(val):
     val = int(val)
@@ -136,18 +136,17 @@ def pretty_bytes(val):
 
 
 def validate_uuid(val):
-    if type(val) is not str:
+    if not isinstance(val, str):
         raise ValueError("UUID must be a string.")
 
-    form = re.match("[a-fA-F0-9]{8}[-]([a-fA-F0-9]{4}[-]){3}[a-fA-F0-9]{12}$",
-                    val)
+    form = re.match("[a-fA-F0-9]{8}[-]([a-fA-F0-9]{4}[-]){3}[a-fA-F0-9]{12}$", val)
     if form is None:
         form = re.match("[a-fA-F0-9]{32}$", val)
         if form is None:
             raise ValueError(
-                  "UUID must be a 32-digit hexadecimal number. It may take "
-                    "the form xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or may "
-                    "omit hyphens altogether.")
+                "UUID must be a 32-digit hexadecimal number. It may take "
+                "the form xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx or may "
+                "omit hyphens altogether.")
 
         else:   # UUID had no dashes, so add them in
             val = (val[0:8] + "-" + val[8:12] + "-" + val[12:16] +
@@ -159,9 +158,33 @@ def validate_macaddr(val):
     if val is None:
         return
 
-    if not (isinstance(val, str) or isinstance(val, basestring)):
+    if not (isinstance(val, str) or isinstance(val, str)):
         raise ValueError("MAC address must be a string.")
 
     form = re.match("^([0-9a-fA-F]{1,2}:){5}[0-9a-fA-F]{1,2}$", val)
     if form is None:
-        raise ValueError("MAC address must be of the format AA:BB:CC:DD:EE:FF, was '%s'" % val)
+        raise ValueError(f"MAC address must be of the format AA:BB:CC:DD:EE:FF, was {val}")
+
+
+# Mapping of UEFI binary names to their associated architectures. We
+# only use this info to do things automagically for the user, it shouldn't
+# validate anything the user explicitly enters.
+UEFI_ARCH_PATTERNS = {
+    "i686": [
+        r".*ovmf-ia32.*",  # fedora, gerd's firmware repo
+    ],
+    "x86_64": [
+        r".*OVMF_CODE\.fd",  # RHEL
+        r".*ovmf-x64/OVMF.*\.fd",  # gerd's firmware repo
+        r".*ovmf-x86_64-.*",  # SUSE
+        r".*ovmf.*", ".*OVMF.*",  # generic attempt at a catchall
+    ],
+    "aarch64": [
+        r".*AAVMF_CODE\.fd",  # RHEL
+        r".*aarch64/QEMU_EFI.*",  # gerd's firmware repo
+        r".*aarch64.*",  # generic attempt at a catchall
+    ],
+    "armv7l": [
+        r".*arm/QEMU_EFI.*",  # fedora, gerd's firmware repo
+    ],
+}

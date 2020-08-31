@@ -1,10 +1,6 @@
 import string
 from vrtManager import util
 from vrtManager.connection import wvmConnect
-from webvirtcloud.settings import QEMU_CONSOLE_DEFAULT_TYPE
-from webvirtcloud.settings import QEMU_CONSOLE_LISTEN_ADDRESSES
-from webvirtcloud.settings import INSTANCE_VOLUME_DEFAULT_OWNER as default_owner
-from webvirtcloud.settings import INSTANCE_VOLUME_DEFAULT_FORMAT
 
 
 def get_rbd_storage_data(stg):
@@ -12,7 +8,7 @@ def get_rbd_storage_data(stg):
     ceph_user = util.get_xml_path(xml, "/pool/source/auth/@username")
 
     def get_ceph_hosts(doc):
-        hosts = []
+        hosts = list()
         for host in doc.xpath("/pool/source/host"):
             name = host.prop("name")
             if name:
@@ -24,13 +20,12 @@ def get_rbd_storage_data(stg):
 
 
 class wvmCreate(wvmConnect):
-    image_format = INSTANCE_VOLUME_DEFAULT_FORMAT
 
     def get_storages_images(self):
         """
         Function return all images on all storages
         """
-        images = []
+        images = list()
         storages = self.get_storages(only_actives=True)
         for storage in storages:
             stg = self.get_storage(storage)
@@ -39,21 +34,21 @@ class wvmCreate(wvmConnect):
             except:
                 pass
             for img in stg.listVolumes():
-                if img.endswith('.iso'):
+                if img.lower().endswith('.iso'):
                     pass
                 else:
                     images.append(img)
         return images
 
     def get_os_type(self):
-        """Get guest capabilities"""
+        """Get guest os type"""
         return util.get_xml_path(self.get_cap_xml(), "/capabilities/guest/os_type")
 
     def get_host_arch(self):
         """Get guest capabilities"""
         return util.get_xml_path(self.get_cap_xml(), "/capabilities/host/cpu/arch")
 
-    def create_volume(self, storage, name, size, image_format=image_format, metadata=False, owner=default_owner):
+    def create_volume(self, storage, name, size, image_format, metadata=False, disk_owner_uid=0, disk_owner_gid=0):
         size = int(size) * 1073741824
         stg = self.get_storage(storage)
         storage_type = util.get_xml_path(stg.XMLDesc(0), "/pool/@type")
@@ -66,16 +61,16 @@ class wvmCreate(wvmConnect):
         else:
             alloc = size
             metadata = False
-        xml = """
+        xml = f"""
             <volume>
-                <name>%s</name>
-                <capacity>%s</capacity>
-                <allocation>%s</allocation>
+                <name>{name}</name>
+                <capacity>{size}</capacity>
+                <allocation>{alloc}</allocation>
                 <target>
-                    <format type='%s'/>
+                    <format type='{image_format}'/>
                      <permissions>
-                        <owner>%s</owner>
-                        <group>%s</group>
+                        <owner>{disk_owner_uid}</owner>
+                        <group>{disk_owner_gid}</group>
                         <mode>0644</mode>
                         <label>virt_image_t</label>
                     </permissions>
@@ -84,7 +79,7 @@ class wvmCreate(wvmConnect):
                         <lazy_refcounts/>
                     </features>
                 </target>
-            </volume>""" % (name, size, alloc, image_format, owner['uid'], owner['guid'])
+            </volume>"""
         stg.createXML(xml, metadata)
         try:
             stg.refresh(0)
@@ -107,7 +102,7 @@ class wvmCreate(wvmConnect):
         if not pool:
             storages = self.get_storages(only_actives=True)
         else:
-            storages = [pool,]
+            storages = [pool]
         for storage in storages:
             stg = self.get_storage(storage)
             if stg.info()[0] != 0:
@@ -121,7 +116,7 @@ class wvmCreate(wvmConnect):
         vol = self.get_volume_by_path(vol_path)
         return vol.storagePoolLookupByVolume()
 
-    def clone_from_template(self, clone, template, storage=None, metadata=False, owner=default_owner):
+    def clone_from_template(self, clone, template, storage=None, metadata=False, disk_owner_uid=0, disk_owner_gid=0):
         vol = self.get_volume_by_path(template)
         if not storage:
             stg = vol.storagePoolLookupByVolume()
@@ -134,16 +129,16 @@ class wvmCreate(wvmConnect):
             clone += '.img'
         else:
             metadata = False
-        xml = """
+        xml = f"""
             <volume>
-                <name>%s</name>
+                <name>{clone}</name>
                 <capacity>0</capacity>
                 <allocation>0</allocation>
                 <target>
-                    <format type='%s'/>
+                    <format type='{format}'/>
                      <permissions>
-                        <owner>%s</owner>
-                        <group>%s</group>
+                        <owner>{disk_owner_uid}</owner>
+                        <group>{disk_owner_gid}</group>
                         <mode>0644</mode>
                         <label>virt_image_t</label>
                     </permissions>
@@ -152,7 +147,7 @@ class wvmCreate(wvmConnect):
                         <lazy_refcounts/>
                     </features>
                 </target>
-            </volume>""" % (clone, format, owner['uid'], owner['guid'])
+            </volume>"""
         stg.createXMLFrom(xml, vol, metadata)
         clone_vol = stg.storageVolLookupByName(clone)
         return clone_vol.path()
@@ -164,48 +159,92 @@ class wvmCreate(wvmConnect):
         vol = self.get_volume_by_path(path)
         vol.delete()
 
-    def create_instance(self, name, memory, vcpu, host_model, uuid, images, cache_mode, networks, virtio, listen_addr, nwfilter=None, video="cirrus", console_pass="random", mac=None, qemu_ga=False):
+    def create_instance(self, name, memory, vcpu, vcpu_mode, uuid, arch, machine, firmware, volumes,
+                        networks, nwfilter, graphics, virtio, listen_addr,
+                        video="vga", console_pass="random", mac=None, qemu_ga=True):
         """
         Create VM function
         """
+        caps = self.get_capabilities(arch)
+        dom_caps = self.get_dom_capabilities(arch, machine)
+
         memory = int(memory) * 1024
 
-        if self.is_kvm_supported():
-            hypervisor_type = 'kvm'
-        else:
-            hypervisor_type = 'qemu'
-
-        xml = """
-                <domain type='%s'>
-                  <name>%s</name>
+        xml = f"""
+                <domain type='{dom_caps["domain"]}'>
+                  <name>{name}</name>
                   <description>None</description>
-                  <uuid>%s</uuid>
-                  <memory unit='KiB'>%s</memory>
-                  <vcpu>%s</vcpu>""" % (hypervisor_type, name, uuid, memory, vcpu)
-        if host_model:
+                  <uuid>{uuid}</uuid>
+                  <memory unit='KiB'>{memory}</memory>
+                  <vcpu>{vcpu}</vcpu>"""
+
+        if dom_caps["os_support"] == 'yes':
+            xml += f"""<os>
+                          <type arch='{arch}' machine='{machine}'>{caps["os_type"]}</type>"""
+            xml += """    <boot dev='hd'/>
+                          <boot dev='cdrom'/>
+                          <bootmenu enable='yes'/>"""
+            if firmware:
+                if firmware["secure"] == 'yes':
+                    xml += """<loader readonly='%s' type='%s' secure='%s'>%s</loader>""" % (firmware["readonly"],
+                                                                                            firmware["type"],
+                                                                                            firmware["secure"],
+                                                                                            firmware["loader"])
+                if firmware["secure"] == 'no':
+                    xml += """<loader readonly='%s' type='%s'>%s</loader>""" % (firmware["readonly"],
+                                                                                firmware["type"],
+                                                                                firmware["loader"])
+            xml += """</os>"""
+
+        if caps["features"]:
+            xml += """<features>"""
+            if 'acpi' in caps["features"]:
+                xml += """<acpi/>"""
+            if 'apic' in caps["features"]:
+                xml += """<apic/>"""
+            if 'pae' in caps["features"]:
+                xml += """<pae/>"""
+            if  firmware.get("secure", 'no') == 'yes':
+                xml += """<smm state="on"/>"""
+            xml += """</features>"""
+
+        if vcpu_mode == "host-model":
             xml += """<cpu mode='host-model'/>"""
-        xml += """<os>
-                    <type arch='%s'>%s</type>
-                    <boot dev='hd'/>
-                    <boot dev='cdrom'/>
-                    <bootmenu enable='yes'/>
-                  </os>""" % (self.get_host_arch(), self.get_os_type())
-        xml += """<features>
-                    <acpi/><apic/><pae/>
-                  </features>
+        elif vcpu_mode == "host-passthrough":
+            xml += """<cpu mode='host-passthrough'/>"""
+        elif vcpu_mode == "":
+            pass
+        else:
+            xml += f"""<cpu mode='custom' match='exact' check='none'>
+                        <model fallback='allow'>{vcpu_mode}</model>"""
+            xml += """</cpu>"""
+
+        xml += """
                   <clock offset="utc"/>
                   <on_poweroff>destroy</on_poweroff>
                   <on_reboot>restart</on_reboot>
                   <on_crash>restart</on_crash>
-                  <devices>"""
+                """
+        xml += """<devices>"""
 
-        vd_disk_letters = list(string.lowercase)
-        fd_disk_letters = list(string.lowercase)
-        hd_disk_letters = list(string.lowercase)
-        sd_disk_letters = list(string.lowercase)
+        vd_disk_letters = list(string.ascii_lowercase)
+        fd_disk_letters = list(string.ascii_lowercase)
+        hd_disk_letters = list(string.ascii_lowercase)
+        sd_disk_letters = list(string.ascii_lowercase)
         add_cd = True
-        #for image, img_type in images.items():
-        for volume in images:
+
+        for volume in volumes:
+
+            disk_opts = ''
+            if volume['cache_mode'] is not None and volume['cache_mode'] != 'default':
+                disk_opts += f"cache='{volume['cache_mode']}' "
+            if volume['io_mode'] is not None and volume['io_mode'] != 'default':
+                disk_opts += f"io='{volume['io_mode']}' "
+            if volume['discard_mode'] is not None and volume['discard_mode'] != 'default':
+                disk_opts += f"discard='{volume['discard_mode']}' "
+            if volume['detect_zeroes_mode'] is not None and volume['detect_zeroes_mode'] != 'default':
+                disk_opts += f"detect_zeroes='{volume['detect_zeroes_mode']}' "
+
             stg = self.get_storage_by_vol_path(volume['path'])
             stg_type = util.get_xml_path(stg.XMLDesc(0), "/pool/@type")
 
@@ -214,11 +253,11 @@ class wvmCreate(wvmConnect):
             if stg_type == 'rbd':
                 ceph_user, secret_uuid, ceph_hosts = get_rbd_storage_data(stg)
                 xml += """<disk type='network' device='disk'>
-                            <driver name='qemu' type='%s' cache='%s'/>
-                            <auth username='%s'>
+                            <driver name='qemu' type='%s' %s />""" % (volume['type'], disk_opts)
+                xml += """  <auth username='%s'>
                                 <secret type='ceph' uuid='%s'/>
                             </auth>
-                            <source protocol='rbd' name='%s'>""" % (volume['type'], cache_mode, ceph_user, secret_uuid, volume['path'])
+                            <source protocol='rbd' name='%s'>""" % (ceph_user, secret_uuid, volume['path'])
                 if isinstance(ceph_hosts, list):
                     for host in ceph_hosts:
                         if host.get('port'):
@@ -227,36 +266,49 @@ class wvmCreate(wvmConnect):
                         else:
                             xml += """
                                    <host name='%s'/>""" % host.get('name')
-                xml += """
-                            </source>"""
+                xml += """</source>"""
             else:
-                xml += """<disk type='file' device='%s'>
-                            <driver name='qemu' type='%s' cache='%s'/>
-                            <source file='%s'/>""" % (volume['device'], volume['type'], cache_mode, volume['path'])
+                xml += """<disk type='file' device='%s'>""" % volume['device']
+                xml += """ <driver name='qemu' type='%s' %s/>""" % (volume['type'], disk_opts)
+                xml += f""" <source file='%s'/>""" % volume['path']
 
-            if volume['bus'] == 'virtio':
-                xml += """<target dev='vd%s' bus='%s'/>""" % (vd_disk_letters.pop(0), volume['bus'])
-            elif volume['bus'] == 'ide':
-                xml += """<target dev='hd%s' bus='%s'/>""" % (hd_disk_letters.pop(0), volume['bus'])
-            elif volume['bus'] == 'fdc':
-                xml += """<target dev='fd%s' bus='%s'/>""" % (fd_disk_letters.pop(0), volume['bus'])
+            if volume.get('bus') == 'virtio':
+                xml += """<target dev='vd%s' bus='%s'/>""" % (vd_disk_letters.pop(0), volume.get('bus'))
+            elif volume.get('bus') == 'ide':
+                xml += """<target dev='hd%s' bus='%s'/>""" % (hd_disk_letters.pop(0), volume.get('bus'))
+            elif volume.get('bus') == 'fdc':
+                xml += """<target dev='fd%s' bus='%s'/>""" % (fd_disk_letters.pop(0), volume.get('bus'))
+            elif volume.get('bus') == 'sata' or volume.get('bus') == 'scsi':
+                xml += """<target dev='sd%s' bus='%s'/>""" % (sd_disk_letters.pop(0), volume.get('bus'))
             else:
-                xml += """<target dev='sd%s' bus='%s'/>""" % (sd_disk_letters.pop(0), volume['bus'])
+                xml += """<target dev='sd%s'/>""" % sd_disk_letters.pop(0)
             xml += """</disk>"""
+
+            if volume.get('bus') == 'scsi':
+                xml += f"""<controller type='scsi' model='{volume.get('scsi_model')}'/>"""
+
         if add_cd:
-            xml += """  <disk type='file' device='cdrom'>
+            xml += """<disk type='file' device='cdrom'>
                           <driver name='qemu' type='raw'/>
-                          <source file=''/>
-                          <target dev='hd%s' bus='ide'/>
-                          <readonly/>
-                        </disk>""" % (hd_disk_letters.pop(0),)
+                          <source file = '' />
+                          <readonly/>"""
+            if 'ide' in dom_caps['disk_bus']:
+                xml += """<target dev='hd%s' bus='%s'/>""" % (hd_disk_letters.pop(0), 'ide')
+            elif 'sata' in dom_caps['disk_bus']:
+                xml += """<target dev='sd%s' bus='%s'/>""" % (sd_disk_letters.pop(0), 'sata')
+            elif 'scsi' in dom_caps['disk_bus']:
+                xml += """<target dev='sd%s' bus='%s'/>""" % (sd_disk_letters.pop(0), 'scsi')
+            else:
+                xml += """<target dev='vd%s' bus='%s'/>""" % (vd_disk_letters.pop(0), 'virtio')
+            xml += """</disk>"""
+
         for net in networks.split(','):
             xml += """<interface type='network'>"""
             if mac:
-                xml += """<mac address='%s'/>""" % mac
-            xml += """<source network='%s'/>""" % net
+                xml += f"""<mac address='{mac}'/>"""
+            xml += f"""<source network='{net}'/>"""
             if nwfilter:
-                xml += """<filterref filter='%s'/>""" % nwfilter
+                xml += f"""<filterref filter='{nwfilter}'/>"""
             if virtio:
                 xml += """<model type='virtio'/>"""
             xml += """</interface>"""
@@ -267,24 +319,27 @@ class wvmCreate(wvmConnect):
             if not console_pass == "":
                 console_pass = "passwd='" + console_pass + "'"
 
-        xml += """  <input type='mouse' bus='ps2'/>
-                    <input type='tablet' bus='usb'/>
-                    <graphics type='%s' port='-1' autoport='yes' %s listen='%s'/>
-                    <console type='pty'/> """ % (QEMU_CONSOLE_DEFAULT_TYPE, console_pass, listen_addr)
+        if 'usb' in dom_caps['disk_bus']:
+            xml += """<input type='mouse' bus='{}'/>""".format('virtio' if virtio else 'usb')
+            xml += """<input type='keyboard' bus='{}'/>""".format('virtio' if virtio else 'usb')
+            xml += """<input type='tablet' bus='{}'/>""".format('virtio' if virtio else 'usb')
+        else:
+            xml += """<input type='mouse'/>"""
+            xml += """<input type='keyboard'/>"""
+            xml += """<input type='tablet'/>"""
 
-        if qemu_ga:
+        xml += f"""
+                <graphics type='{graphics}' port='-1' autoport='yes' {console_pass} listen='{listen_addr}'/>
+                <console type='pty'/> """
+
+        if qemu_ga and virtio:
             xml += """ <channel type='unix'>
                             <target type='virtio' name='org.qemu.guest_agent.0'/>
                        </channel>"""
 
-        xml += """ <video>
-                      <model type='%s'/>
+        xml += f""" <video>
+                      <model type='{video}'/>
                    </video>
-                   <memballoon model='virtio'/>
               </devices>
-            </domain>""" % video
-
-
-
-
+            </domain>"""
         self._defineXML(xml)
